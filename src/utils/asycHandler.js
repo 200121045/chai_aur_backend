@@ -5,12 +5,4 @@ const asyncHandler = (requestHandler) => {
             .catch((err) => next(err));
     }
 }
-
-
-
-
-
-export {asyncHandler}
-
-
-//   const asyncHandler = (fn)=>()=>{}
+export  default asyncHandler;  

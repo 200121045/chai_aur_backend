@@ -1,14 +1,12 @@
-// import { asyncHandler } from "../utils/asycHandler";
-import asyncHandler from '../utils/asyncHandler.js';
-
-const registerUser = asyncHandler (async(req,res)=> {
+import asyncHandler from "../utils/asycHandler.js";
+ const registerUser = asyncHandler (async(req,res)=> {
 
    
                res.status(200).json({
     message:"ok"
- })
+ });
     
-})
+});
 export  { registerUser }
 
   // user detail form user frontend
