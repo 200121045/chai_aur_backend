@@ -16,7 +16,7 @@ app.use(express.urlencoded({extended: true, limit: "16kb"}))
 app.use(express.static("public"))
 app.use(cookieParser())
 
- app.use("/api/v1/users", userRouter)
+ app.use("/api/v1/users",  userRouter)
 
 // Corrected URL
 // http://localhost:8000/api/v1/users/register
