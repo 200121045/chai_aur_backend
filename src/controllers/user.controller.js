@@ -1,24 +1,33 @@
-// import asyncHandler from "../utils/asyncHandler.js";
-import {asyncHandler} from "../utils/asycHandler.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
-import { upload } from "../middlewares/multer.middleware.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 
+const generateAccessAndRefreshToken = async (userId) => {
+  try {
+    const user = await User.findById(userId);
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
+    user.refreshToken = refreshToken; // Save to DB
+
+    await user.save({ validateBeforeSave: false });
+    return { accessToken, refreshToken };
+  } catch (error) {
+    throw new ApiError(500, "Something went wrong");
+  }
+};
+
 const registerUser = asyncHandler(async (req, res) => {
   const { fullname, email, username, password } = req.body;
-  
-  // Logging email and password for debugging purposes
+
   console.log("email:", email);
   console.log("password:", password);
-  
-  // Validation: Check if any fields are empty
+
   if ([fullname, email, username, password].some((field) => field?.trim() === "")) {
     throw new ApiError(400, "All fields are required.");
   }
 
-  // Check if user already exists (either by username or email)
   const existedUser = await User.findOne({
     $or: [{ username }, { email }]
   });
@@ -27,7 +36,6 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(409, "User with this email or username already exists.");
   }
 
-  // Handling file uploads
   const avatarLocalPath = req.files?.avatar?.[0]?.path;
   const coverImageLocalPath = req.files?.coverImage?.[0]?.path;
 
@@ -35,7 +43,6 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Avatar is required.");
   }
 
-  // Upload avatar and cover image to Cloudinary
   const avatar = await uploadOnCloudinary(avatarLocalPath);
   const coverImage = coverImageLocalPath ? await uploadOnCloudinary(coverImageLocalPath) : null;
 
@@ -43,7 +50,6 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Failed to upload avatar.");
   }
 
-  // Create a new user in the database
   const user = await User.create({
     fullname,
     avatar: avatar.url,
@@ -52,20 +58,71 @@ const registerUser = asyncHandler(async (req, res) => {
     password,
     username: username.toLowerCase()
   });
-  // The ?. operator is called the optional chaining operator in JavaScript. It allows you to safely
-  //  access deeply nested properties on an object without worrying about whether intermediate properties exist.
-   // Fetch the created user and exclude sensitive fields like password and refresh token
+
   const createdUser = await User.findById(user._id).select("-password -refreshToken");
 
   if (!createdUser) {
     throw new ApiError(500, "Something went wrong while registering the user.");
   }
 
-  // Respond with the newly created user details
   return res.status(201).json(
     new ApiResponse(201, createdUser, "User is successfully registered.")
   );
 });
 
-export { registerUser };
- 
+const loginUser = asyncHandler(async (req, res) => {
+  const { email, username, password } = req.body;
+
+  if (!username  && !email) {
+    throw new ApiError(400, "Username and email are essential");
+  }
+
+  const user = await User.findOne({
+    $or: [{ username }, { email }]
+  });
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const isPasswordValid = await user.isPasswordCorrect(password);
+  if (!isPasswordValid) {
+    throw new ApiError(401, "Invalid password");
+  }
+
+  const { accessToken, refreshToken } = await generateAccessAndRefreshToken(user._id);
+
+  const loggedinUser = await User.findById(user._id).select("-password -refreshToken");
+
+  const options = {
+    httpOnly: true,
+    secure: true
+  };
+
+  return res.status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+      new ApiResponse(200, {
+        user: loggedinUser, accessToken, refreshToken
+      }, "User logged in successfully")
+    );
+});
+
+const logoutUser = asyncHandler(async (req, res) => {
+  await User.findByIdAndUpdate(req.user._id, {
+    $set: { refreshToken: undefined }
+  }, { new: true });
+
+  const options = {
+    httpOnly: true,
+    secure: true
+  };
+
+  return res.status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(new ApiResponse(200, {}, "User logged out"));
+});
+
+export { registerUser, loginUser, logoutUser };
